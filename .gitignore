@@ -53,3 +53,6 @@ dkms.conf
 
 tasks.json
 sftp.json
+settings.json
+
+.DS_Store
