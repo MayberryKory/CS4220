@@ -12,7 +12,7 @@
 #define SERVER_PORT 12345       
 #define CHUNK_SIZE  256         
 #define MAX_PACKET_SIZE 1024    // Define a max packet size for buffer allocation
-#define MAX_ECHO 255
+
 
 
 // Prototype for the alarm signal handler
@@ -56,31 +56,45 @@ printf("Server: Closing the connection...\n");
     }
 
     // Main loop to handle incoming packets indefinitely
-    for (;;) {
-        printf("Listening.....\n");
-        struct packetStruct currPacket; // Packet struct to store incoming data
-        cliAddrLen = sizeof(gbnClntAddr);
+   while (1) {
+    printf("Listening.....\n");
+    struct packetStruct currPacket; // Packet struct to store incoming data
+    cliAddrLen = sizeof(gbnClntAddr);
 
-        // Block and wait for incoming data, directly into currPacket
-        if (recvfrom(sock, &currPacket, sizeof(currPacket), 0,
-                     (struct sockaddr *)&gbnClntAddr, &cliAddrLen) < 0) {
-            perror("recvfrom() failed");
-            continue; // In case of error, log and try to receive again
-        }
-
-        // Simulate packet loss based on the specified rate
-        if (lossRate > ((double)rand() / RAND_MAX)) {
-            printf("Packet with sequence number %d lost\n", currPacket.seq_no);
-            continue; // Skip further processing for this packet
-        }
-
-        // Assuming type 1 is data and type 2 is an ack for simplification
-        printf("Received packet: Seq No %d, Length %d, Data: %s\n", 
-               currPacket.seq_no, currPacket.length, currPacket.data);
-
-        // Acknowledgment logic would go here
-        // For this example, we simply print the received packet's information
+    // Block and wait for incoming data, directly into currPacket
+    if (recvfrom(sock, &currPacket, sizeof(currPacket), 0,
+                 (struct sockaddr *)&gbnClntAddr, &cliAddrLen) < 0) {
+        perror("recvfrom() failed");
+        continue; // In case of error, log and try to receive again
     }
+
+    // Simulate packet loss based on the specified rate
+    if (lossRate > ((double)rand() / RAND_MAX)) {
+        printf("Packet with sequence number %d lost\n", currPacket.seq_no);
+        continue; // Skip further processing for this packet
+    }
+
+    // Assuming type 1 is data and type 2 is an ack for simplification
+    printf("Received packet: Seq No %d, Length %d, Data: %s\n", 
+           currPacket.seq_no, currPacket.length, currPacket.data);
+
+    if (currPacket.type == 1) { // Check if the packet is a data packet
+        struct packetStruct ackPacket;
+        memset(&ackPacket, 0, sizeof(ackPacket)); // Initialize the ackPacket to zero
+        
+        ackPacket.type = 2; // Set packet type to ACK
+        ackPacket.seq_no = currPacket.seq_no; // Set the ACK packet's sequence number to match the received packet
+        
+        // Send the ACK packet back to the client
+        if (sendto(sock, &ackPacket, sizeof(ackPacket), 0,
+                   (struct sockaddr *)&gbnClntAddr, sizeof(gbnClntAddr)) < 0) {
+            perror("sendto() failed while sending ACK");
+        } else {
+            printf("ACK sent for packet with sequence number %d\n", ackPacket.seq_no);
+        }
+    }
+    // Other logic for different packet types would go here
+}
 
 printf("Server: Closing the connection...\n");
     close(sock); // Cleanup

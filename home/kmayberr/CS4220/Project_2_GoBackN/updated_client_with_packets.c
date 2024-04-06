@@ -7,6 +7,7 @@
 #include <errno.h>      // Defines macros for reporting and retrieving error conditions
 #include <signal.h>     // Signal handling definitions
 #include "packetStruct.c"  // Include the Go-Back-N packet structure definitions
+#include <sys/select.h>  // For select()
 
 // Defines for timeout, maximum tries, and hardcoded user inputs
 #define TIMEOUT_SECS 3
@@ -14,18 +15,16 @@
 #define SERVER_IP "127.0.0.1" // Example hardcoded server IP
 #define SERVER_PORT 12345       // Example hardcoded server port
 #define CHUNK_SIZE  256         // Example hardcoded chunk size, must be less than 512
-#define WINDOW_SIZE 4           // Example hardcoded window size
+#define WINDOW_SIZE 1           // Example hardcoded window size
 
 // Global variables for handling state across functions
-int tries = 0;           // Counter for the number of tries
-int base = 0;            // Base index for the window
+int sendBase = 0;
+int nextSeqNum = 0;
+int ackReceived = 0;           // Base index for the window
+int tries = 0;
 int windowSize = WINDOW_SIZE; // Size of the sliding window, now a constant
 int sendflag = 1;        // Flag to control sending of packets
 
-// Function prototypes
-void CatchAlarm(int ignored); // Handler for the alarm signal
-int max(int a, int b);        // Returns the maximum of two integers
-int min(int a, int b);        // Returns the minimum of two integers
 
 // Function to create a packet from a segment of text
 struct packetStruct createPacket(const char* segment, int length, int seq_no) {
@@ -36,6 +35,76 @@ struct packetStruct createPacket(const char* segment, int length, int seq_no) {
     strncpy(packet.data, segment, length);
     packet.data[length] = '\0'; // Ensure null-termination
     return packet;
+}
+
+// Handler for the SIGALRM signal
+void CatchAlarm(int ignored) {
+    tries += 1; // Increment the try counter
+    sendflag = 1; // Set flag to trigger packet sending
+}
+
+
+void sendPackets(int sock, struct sockaddr_in gbnServAddr, struct packetStruct packets[], int nPackets) {
+    struct timeval tv;
+    fd_set readfds;
+    int maxfd = sock + 1;
+
+    while (sendBase < nPackets) {
+        // Sending packets within the window size
+        while (nextSeqNum < sendBase + WINDOW_SIZE && nextSeqNum < nPackets) {
+            printf("Sending packet %d\n", nextSeqNum);
+            packets[nextSeqNum].seq_no = nextSeqNum;  // Setting the sequence number
+            
+            if (sendto(sock, &packets[nextSeqNum], sizeof(struct packetStruct), 0, 
+                       (struct sockaddr *)&gbnServAddr, sizeof(gbnServAddr)) < 0) {
+                perror("sendto() failed");
+                printf("Client: Error sending packet %d. Closing the socket...\n", nextSeqNum);
+                close(sock);
+                exit(EXIT_FAILURE);
+            }
+            printf("Packet %d sent\n", nextSeqNum);
+
+            if (sendBase == nextSeqNum) {
+                // Initialize or reset the timer for the first packet in the window
+                tv.tv_sec = 2;  // Set timeout duration (2 seconds for example)
+                tv.tv_usec = 0;
+            }
+
+            nextSeqNum++;
+        }
+
+        // Prepare to listen for ACKs
+        FD_ZERO(&readfds);
+        FD_SET(sock, &readfds);
+
+        // Waiting for an ACK or a timeout
+        int retval = select(maxfd, &readfds, NULL, NULL, &tv);
+        if (retval == -1) {
+            perror("select() failed");
+            exit(EXIT_FAILURE);
+        } else if (retval) {
+            // ACK is available to be read
+            struct packetStruct ackPacket;
+            ssize_t numBytes = recvfrom(sock, &ackPacket, sizeof(ackPacket), 0, NULL, NULL);
+            if (numBytes < 0) {
+                perror("recvfrom() failed");
+                exit(EXIT_FAILURE);
+            } else if (ackPacket.type == 2 && ackPacket.seq_no >= sendBase) {  // ACK packet type
+                printf("ACK received for packet %d\n", ackPacket.seq_no);
+                sendBase = ackPacket.seq_no + 1; // Move window forward
+
+                // Reset timer for the next packet if there are outstanding packets
+                if (sendBase < nextSeqNum) {
+                    tv.tv_sec = 2;  // Reset timer
+                }
+            }
+        } else {
+            // Timeout occurred, no ACK received
+            printf("Timeout, resending packets starting from %d\n", sendBase);
+            nextSeqNum = sendBase;  // Reset nextSeqNum for resending packets
+            tv.tv_sec = 2;  // Reset timer for retransmission
+        }
+    }
 }
 
 int main(int argc, char *arg[]) {
@@ -115,18 +184,7 @@ int main(int argc, char *arg[]) {
     gbnServAddr.sin_addr.s_addr = inet_addr(SERVER_IP); // Server IP address
     gbnServAddr.sin_port = htons(SERVER_PORT); // Server port
 
-   for(int i = 0; i < nPackets; i++) {
-    // Sending each packet in the array to the server
-    printf("sending packet %d\n", i);
-    if (sendto(sock, &packets[i], sizeof(struct packetStruct), 0, 
-               (struct sockaddr *)&gbnServAddr, sizeof(gbnServAddr)) < 0) {
-        perror("sendto() failed");
-        printf("Client: Error sending packet %d. Closing the socket...\n", i);
-        close(sock);
-        exit(EXIT_FAILURE);
-        }
-    printf("Packet %d sent\n", i);
-   }
+    sendPackets(sock, gbnServAddr, packets, nPackets);
     //printf("File content sent to the server successfully.\n");
 
     printf("Client: Closing the socket...\n");
@@ -138,12 +196,4 @@ int main(int argc, char *arg[]) {
 void CatchAlarm(int ignored) {
     tries += 1; // Increment the try counter
     sendflag = 1; // Set flag to trigger packet sending
-}
-
-// Utility functions to find the maximum and minimum of two integers
-int max(int a, int b) {
-    return b > a ? b : a;
-}
-int min(int a, int b) {
-    return a < b ? a : b;
 }
