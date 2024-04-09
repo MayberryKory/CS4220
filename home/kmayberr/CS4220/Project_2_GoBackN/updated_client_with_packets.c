@@ -15,7 +15,7 @@
 #define SERVER_IP "127.0.0.1" // Example hardcoded server IP
 #define SERVER_PORT 12345       // Example hardcoded server port
 #define CHUNK_SIZE  256         // Example hardcoded chunk size, must be less than 512
-#define WINDOW_SIZE 1           // Example hardcoded window size
+#define WINDOW_SIZE 4           // Example hardcoded window size
 
 // Global variables for handling state across functions
 int sendBase = 0;
@@ -43,41 +43,37 @@ void CatchAlarm(int ignored) {
     sendflag = 1; // Set flag to trigger packet sending
 }
 
-
 void sendPackets(int sock, struct sockaddr_in gbnServAddr, struct packetStruct packets[], int nPackets) {
     struct timeval tv;
     fd_set readfds;
     int maxfd = sock + 1;
+    int waitForAckFor = 0; // This represents the lowest packet in the window for which ACK is awaited.
 
     while (sendBase < nPackets) {
-        // Sending packets within the window size
-        while (nextSeqNum < sendBase + WINDOW_SIZE && nextSeqNum < nPackets) {
-            printf("Sending packet %d\n", nextSeqNum);
-            packets[nextSeqNum].seq_no = nextSeqNum;  // Setting the sequence number
+        // Send packets within the window
+        while (sendBase + waitForAckFor < sendBase + WINDOW_SIZE && sendBase + waitForAckFor < nPackets) {
+            int seqNum = sendBase + waitForAckFor;
+            printf("Sending packet %d\n", seqNum);
+            packets[seqNum].seq_no = seqNum;
             
-            if (sendto(sock, &packets[nextSeqNum], sizeof(struct packetStruct), 0, 
+            if (sendto(sock, &packets[seqNum], sizeof(struct packetStruct), 0, 
                        (struct sockaddr *)&gbnServAddr, sizeof(gbnServAddr)) < 0) {
                 perror("sendto() failed");
-                printf("Client: Error sending packet %d. Closing the socket...\n", nextSeqNum);
+                printf("Error sending packet %d. Closing socket...\n", seqNum);
                 close(sock);
                 exit(EXIT_FAILURE);
             }
-            printf("Packet %d sent\n", nextSeqNum);
-
-            if (sendBase == nextSeqNum) {
-                // Initialize or reset the timer for the first packet in the window
-                tv.tv_sec = 2;  // Set timeout duration (2 seconds for example)
-                tv.tv_usec = 0;
-            }
-
-            nextSeqNum++;
+            printf("Packet %d sent\n", seqNum);
+            waitForAckFor++;
         }
 
-        // Prepare to listen for ACKs
+        // Initialize or reset the timer for waiting ACKs
+        tv.tv_sec = 2; // 2 seconds for example
+        tv.tv_usec = 0;
+
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
 
-        // Waiting for an ACK or a timeout
         int retval = select(maxfd, &readfds, NULL, NULL, &tv);
         if (retval == -1) {
             perror("select() failed");
@@ -85,27 +81,22 @@ void sendPackets(int sock, struct sockaddr_in gbnServAddr, struct packetStruct p
         } else if (retval) {
             // ACK is available to be read
             struct packetStruct ackPacket;
-            ssize_t numBytes = recvfrom(sock, &ackPacket, sizeof(ackPacket), 0, NULL, NULL);
-            if (numBytes < 0) {
-                perror("recvfrom() failed");
-                exit(EXIT_FAILURE);
-            } else if (ackPacket.type == 2 && ackPacket.seq_no >= sendBase) {  // ACK packet type
-                printf("ACK received for packet %d\n", ackPacket.seq_no);
-                sendBase = ackPacket.seq_no + 1; // Move window forward
-
-                // Reset timer for the next packet if there are outstanding packets
-                if (sendBase < nextSeqNum) {
-                    tv.tv_sec = 2;  // Reset timer
+            if (recvfrom(sock, &ackPacket, sizeof(ackPacket), 0, NULL, NULL) > 0) {
+                if (ackPacket.type == 2 && ackPacket.seq_no == sendBase) { // Ensure ACK is for the lowest packet
+                    printf("ACK received for packet %d\n", ackPacket.seq_no);
+                    sendBase++; // Move window forward only for the lowest acknowledged packet
+                    waitForAckFor--; // Adjust waitForAckFor since the window has slid forward
                 }
             }
         } else {
-            // Timeout occurred, no ACK received
+            // Timeout occurred
             printf("Timeout, resending packets starting from %d\n", sendBase);
-            nextSeqNum = sendBase;  // Reset nextSeqNum for resending packets
-            tv.tv_sec = 2;  // Reset timer for retransmission
+            // Reset waitForAckFor to start resending packets from the lowest unacknowledged one
+            waitForAckFor = 0;
         }
     }
 }
+
 
 int main(int argc, char *arg[]) {
     printf("Client: Starting...\n");
@@ -192,8 +183,4 @@ int main(int argc, char *arg[]) {
     return 0;
 }
 
-// Handler for the SIGALRM signal
-void CatchAlarm(int ignored) {
-    tries += 1; // Increment the try counter
-    sendflag = 1; // Set flag to trigger packet sending
-}
+
