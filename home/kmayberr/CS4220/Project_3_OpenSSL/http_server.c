@@ -1,3 +1,25 @@
+/***********************************************************************
+ * http_server.c
+ * 
+ * A simple HTTPS server implementation using OpenSSL to demonstrate secure
+ * communication over a network. This server listens on port 4433, accepts
+ * client connections, performs an SSL handshake, and responds to HTTP GET
+ * requests with a simple text message.
+ *
+ * Author(s): Kory Mayberry, Ashley Judson, Nathan Peckham
+ * 
+ * University of Colorado, Colorado Springs
+ * Course: CS 4220 Networks
+ * Instructor: Dr. Serena Sulllivan
+ * 
+ *
+ * Notes:
+ * - This program is part of an educational project to understand SSL/TLS operations.
+ * - It is designed to handle simple HTTP GET requests and respond with a fixed message.
+ * - This server is configured to listen on localhost on port 4433.
+ ***********************************************************************/
+
+
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -40,7 +62,7 @@ SSL_CTX *create_context() {
     return ctx;
 }
 
-// Configure the SSL context with the server's certificate and private key
+// Configure the SSL context with the server's certificate, private key, and AES 256-bit ciphers
 void configure_context(SSL_CTX *ctx) {
     SSL_CTX_set_ecdh_auto(ctx, 1);  // Use ECDH automatically for key exchange
 
@@ -56,7 +78,14 @@ void configure_context(SSL_CTX *ctx) {
         exit(EXIT_FAILURE);
     }
 
-    printf("SSL context configured with certificate and private key.\n");
+    // Specify AES 256-bit cipher suites
+    const char *cipher_list = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384";
+    if (!SSL_CTX_set_cipher_list(ctx, cipher_list)) {
+        fprintf(stderr, "Failed to set cipher list. Ensure the cipher suite is available in OpenSSL.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("SSL context configured with certificate, private key, and AES 256-bit encryption.\n");
 }
 
 // Main function to set up the server socket and handle incoming connections

@@ -1,3 +1,23 @@
+/***********************************************************************
+ * http_client.c
+ * 
+ * A simple HTTPS client implementation using OpenSSL to demonstrate secure
+ * communication over a network. This client connects to a specified server,
+ * performs an SSL handshake, sends an HTTP GET request, and prints the server's
+ * response.
+ *
+ * Authors: Kory Mayberry, Ashley Judson, Nathan Peckham
+ * 
+ * University of Colorado Springs
+ * Course: CS 4220 Networks Spring 2024
+ * Instructor: Dr. Serena Sullivan
+ * 
+ *
+ * Notes:
+ * - This program is part of an educational project to understand SSL/TLS operations.
+ * - Ensure OpenSSL is correctly installed and configured on the system where this is run.
+ * - This client is configured to connect to localhost on port 4433.
+ ***********************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -37,7 +57,14 @@ SSL_CTX *create_context() {
         exit(EXIT_FAILURE);
     }
 
-    printf("SSL context created.\n");
+    // Set the cipher list to AES 256-bit cipher suites
+    const char *cipher_list = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384";
+    if (!SSL_CTX_set_cipher_list(ctx, cipher_list)) {
+        fprintf(stderr, "Failed to set cipher list. Ensure the cipher suite is available in OpenSSL.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("SSL context created and configured with AES 256-bit encryption.\n");
     return ctx;
 }
 
@@ -95,8 +122,6 @@ int main(int argc, char **argv) {
 
     init_openssl(); // Initialize OpenSSL
     ctx = create_context(); // Create SSL context
-    SSL_CTX_set_default_verify_paths(ctx); // Set default paths for finding CA certificates
-
     server_fd = open_connection(SERVER, PORT); // Open connection to the server
     ssl = SSL_new(ctx); // Create a new SSL connection state
     SSL_set_fd(ssl, server_fd); // Associate the connection with the file descriptor
