@@ -79,7 +79,7 @@ void configure_context(SSL_CTX *ctx) {
     }
 
     // Specify AES 256-bit cipher suites
-    const char *cipher_list = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384";
+    const char *cipher_list = "ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:DHE-RSA-AES256-SHA256:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES256-SHA:AES256-SHA256:AES256-SHA";
     if (!SSL_CTX_set_cipher_list(ctx, cipher_list)) {
         fprintf(stderr, "Failed to set cipher list. Ensure the cipher suite is available in OpenSSL.\n");
         exit(EXIT_FAILURE);
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
             printf("SSL handshake failed.\n");
         } else {
             printf("SSL handshake succeeded.\n");
-            SSL_write(ssl, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nOpenSSL is fun!", strlen("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nOpenSSL is fun!"));
+            SSL_write(ssl, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nOpenSSL is fun! Hi Sully!", strlen("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nOpenSSL is fun! Hi Sully!"));
             printf("Response sent to client.\n");
         }
 

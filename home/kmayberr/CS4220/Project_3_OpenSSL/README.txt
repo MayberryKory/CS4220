@@ -44,7 +44,9 @@ Challenges Overcome:
 
 1. Integrating OpenSSL: Addressed issues related to linking and initializing OpenSSL within the C environment.
 2. Error Handling: Enhanced error management to ensure robust handling of SSL handshake failures and network communication errors.
-3. Platform Compatibility: Modified the code to ensure functionality across Linux and macOS, accommodating different OpenSSL paths and system configurations.
+3. Platform Compatibility: Modified the code to ensure functionality across Linux and macOS, accommodating different 
+    OpenSSL paths and system configurations.
+4. Forcing OpenSSL to use AES was really confusing.
 
 Resources Used:
 
